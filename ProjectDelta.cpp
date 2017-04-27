@@ -28,7 +28,7 @@ public:
 	void init();
 	void simulate();
 	bool checkForWall();
-	bool checkForGoal(double xnew, double ynew, double xgoal, double ygoal1, double ygoal2);
+	bool checkForGoal(double xgoal, double ygoal1, double ygoal2);
 	
 };
 
@@ -38,7 +38,7 @@ void ship::init()
 	ypos = rand() % 1000;
 	xnew = xpos;
 	ynew = ypos;
-	theta = rand() % 6; // in radians
+	theta = rand() % 360 *3.1415/180; // in radians
 	omega = rand() % 10; // in radians per second
 	dt = 0.2;
 	T = 5.0;
@@ -53,6 +53,9 @@ void ship::simulate()
 	theta = theta + omega*dt;
 	ynew = ypos + v*cos(theta)*dt;
 	xnew = xpos + v*sin(theta)*dt;
+
+	assert(xnew != xpos || ynew != ypos); // ensures ship is moving in at least one direction and that program can calculate next position (LR_8)
+	
 }
 
 bool ship::checkForWall()
@@ -65,7 +68,7 @@ bool ship::checkForWall()
 	return false;
 }
 
-bool ship::checkForGoal(double xnew, double ynew, double xgoal, double ygoal1, double ygoal2)
+bool ship::checkForGoal(double xgoal, double ygoal1, double ygoal2)
 {
 	// get equation of line that ship is following
 	// check if line crosses goal
@@ -156,9 +159,63 @@ int main()
 	G.init();
 
 	// Initialize Ship
-	ship S;
-	S.init();
+	ship testShip;
+	testShip.init();
+	assert(testShip.xpos > 0 && testShip.xpos < 1000 && testShip.ypos>0 && testShip.ypos < 1000); // ensures that program can represent a ship (LR_!)
 
+	int timeStep = 0;
+	while (testShip.checkForGoal(G.x1, G.y1, G.y2) == false && testShip.checkForWall() == false)
+	{
+		testShip.simulate();
+
+		timeStep++;
+		
+		if (testShip.checkForGoal(G.x1, G.y1, G.y2))
+		{
+			assert(testShip.ynew > G.y1 && testShip.ynew < G.y2); //ensures that ship has passed through goal (MR_2)
+			cout << "Ship Reached Goal!" << endl;
+		}
+
+		else if (testShip.checkForWall())
+		{
+			assert(testShip.xpos > 1000 || testShip.xpos < 0 || testShip.ypos > 1000 || testShip.ypos < 0); // ensures that simulation ends when ship exits range (LR_3)
+			cout << "Ship Exited Boundary!" << endl;
+		}
+
+		if (timeStep > 1000)
+		{
+			break;
+		}
+	}
+
+	cout << "Steps Taken for Test 1: " << timeStep << endl;
+
+	//re-initialize for second test 
+	testShip.init();
+	testShip.omega = 0;
+	testShip.u = 0;
+	testShip.theta = 0;
+
+	timeStep = 0;
+	double initialX = testShip.xpos;
+
+	while (testShip.checkForWall() ==false)
+	{
+		testShip.simulate();
+		
+		if (testShip.checkForGoal(G.x1,G.y1,G.y2))
+		{
+			break;
+		}
+
+		timeStep++;
+
+		assert(testShip.xpos == initialX); // ensures that ship moves in straight line when u = w = 0;
+	}
+
+	cout << "Test 2 Completed" << endl;
+
+	system("pause");
     return 0;
 }
 
@@ -193,6 +250,7 @@ vector<policy> EA_replicate(vector<policy> P, int popSize, int numWeights)
 		{
 			int weightIndex = rand() % numWeights;
 			mutPol.Pol.at(weightIndex) = mutPol.Pol.at(weightIndex) + (double)rand() / RAND_MAX - (double)rand() / RAND_MAX;
+			assert(mutPol.Pol.at(weightIndex) != population.at(index).Pol.at(weightIndex)); // ensures program can mutate set of weights (LR_5)
 		}
 		
 		population.push_back(mutPol);
