@@ -8,6 +8,7 @@
 #include <random>
 #include <math.h>
 #include <vector>
+#include <algorithm>
 #include "LY_NN.h"
 
 using namespace std;
@@ -79,6 +80,9 @@ bool ship::checkForGoal(double xgoal, double ygoal1, double ygoal2)
 
 	if ((m*xgoal+b)<ygoal2 && (m*xgoal+b)>ygoal1)
 	{
+		xpos = xnew;
+		ypos = ynew;
+
 		return true;
 	}
 	// reset ship's current position 
@@ -126,8 +130,9 @@ void goal::init() {
 
 class policy {
 public:
-	vector<double> Pol;
+	vector<double> weights;
 	double fitness;
+	int timeStep;
 
 	void init(int numWeights);
 };
@@ -137,9 +142,10 @@ void policy::init(int numWeights) {
 	{
 		double weight;
 		weight = (double)rand() / RAND_MAX - (double)rand()/RAND_MAX;
-		Pol.push_back(weight); //placeholder
+		weights.push_back(weight); //placeholder
 	}
 	fitness = 0; // placeholder
+	timeStep = 0;
 }
 
 vector<policy> EA_init(int popSize, int numWeights);
@@ -210,10 +216,126 @@ int main()
 
 		timeStep++;
 
-		assert(testShip.xpos == initialX); // ensures that ship moves in straight line when u = w = 0;
+		assert(testShip.xpos == initialX); // ensures that ship moves in straight line when u = w = 0; (MR_1)
 	}
 
 	cout << "Test 2 Completed" << endl;
+
+	//////// ACTUAL PROGRAM ////////////////////
+
+	// Initialize Goal
+	goal Gol;
+	Gol.init();
+
+	// Initialize Ship
+	ship S;
+	S.init();
+
+	// Initialize Neural Network
+	neural_network NN;
+	NN.setup(3, 5, 1); //inputs are x, y, theta
+
+	NN.set_in_min_max(0, 1000);
+	NN.set_in_min_max(0, 1000);
+	NN.set_in_min_max(0, 6.28);
+	NN.set_out_min_max(-15, 15);
+
+	int popSize = 10;
+
+	int numWeights = NN.get_number_of_weights();
+
+	vector<policy> population;
+	for (int i = 0; i < popSize; i++)
+	{
+		policy P;
+		P.init(numWeights);
+		population.push_back(P);
+	}
+	assert(population.size() == popSize);
+
+	for (int generation = 0; generation < 10; generation++) // number of generations
+	{
+		for (int policyIndex = 0; policyIndex < popSize; policyIndex++)
+		{
+			//S.init();
+
+			NN.set_weights(population.at(policyIndex).weights, true);
+
+			int tStep = 0;
+
+			while (!S.checkForGoal(G.x1, G.y1, G.y2) && !S.checkForWall())
+			{
+				// set state
+				vector<double> state;
+				state.push_back(S.xpos);
+				state.push_back(S.ypos);
+				state.push_back(S.theta);
+
+				// give NN state
+				NN.set_vector_input(state);
+
+				// execute and get output
+				NN.execute();
+
+				S.u = NN.get_output(0);
+
+				// run one timestep
+				S.simulate();
+				
+				population.at(policyIndex).timeStep = tStep;
+				
+				// determine fitness
+
+				if (S.checkForGoal(G.x1, G.y1, G.y2))
+				{
+					cout << "SHIP REACHED GOAL" << endl;
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness +1000;
+					break;
+				}
+				
+				else if(S.checkForWall())
+				{
+					cout << "SHIP HIT WALL" << endl;
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness -1000;
+					break;
+				}
+
+				else
+				{
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness-1; //NEED SOME SORT OF FITNESS EVALUATION
+				}
+
+				cout << tStep << endl;
+
+				if (tStep > 1000)
+				{
+					break;
+				}
+
+				tStep++;
+			}
+		}
+		// EA for weights
+
+		// Neural Network with weights
+
+		// Simulate with given u
+
+		// Evaluate fitness
+
+		
+		population = EA_downselect(population, popSize);
+
+		population = EA_replicate(population, popSize, numWeights);
+
+	}
+
+	//sort(population.begin(), population.end());
+	
+	for (int i = 0; i < popSize; i++)
+	{
+		cout << i << "\t" << population.at(i).fitness << "\t" << population.at(i).timeStep << endl;
+	}
 
 	system("pause");
     return 0;
@@ -249,8 +371,8 @@ vector<policy> EA_replicate(vector<policy> P, int popSize, int numWeights)
 		for (int i = 0; i < numWeights; i++)
 		{
 			int weightIndex = rand() % numWeights;
-			mutPol.Pol.at(weightIndex) = mutPol.Pol.at(weightIndex) + (double)rand() / RAND_MAX - (double)rand() / RAND_MAX;
-			assert(mutPol.Pol.at(weightIndex) != population.at(index).Pol.at(weightIndex)); // ensures program can mutate set of weights (LR_5)
+			mutPol.weights.at(weightIndex) = mutPol.weights.at(weightIndex) + (double)rand() / RAND_MAX - (double)rand() / RAND_MAX;
+			assert(mutPol.weights.at(weightIndex) != population.at(index).weights.at(weightIndex)); // ensures program can mutate set of weights (LR_5)
 		}
 		
 		population.push_back(mutPol);
@@ -281,7 +403,7 @@ vector<policy> EA_downselect(vector<policy> P, int popSize)
 			index2 = rand() % popSize;
 		}
 
-		if (P.at(index).fitness < P.at(index2).fitness)
+		if (P.at(index).fitness > P.at(index2).fitness)
 		{
 			population.push_back(P.at(index));
 		}
