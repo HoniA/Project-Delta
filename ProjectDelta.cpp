@@ -4,11 +4,12 @@
 #include "stdafx.h"
 #include <iostream>
 #include <assert.h>
-#include <time.h>
 #include <random>
-#include <math.h>
+#include <time.h>
 #include <vector>
+#include <math.h>
 #include <algorithm>
+#include <fstream>
 #include "LY_NN.h"
 
 using namespace std;
@@ -78,13 +79,28 @@ bool ship::checkForGoal(double xgoal, double ygoal1, double ygoal2)
 	m = (ynew - ypos) / (xnew - xpos);
 	b = ypos - m*xpos;
 
-	if ((m*xgoal+b)<ygoal2 && (m*xgoal+b)>ygoal1)
+	if (xpos > xgoal && xnew < xgoal)
 	{
-		xpos = xnew;
-		ypos = ynew;
+		if ((m*xgoal + b) < ygoal2 && (m*xgoal + b) > ygoal1)
+		{
+			xpos = xnew;
+			ypos = ynew;
 
-		return true;
+			return true;
+		}
 	}
+
+	else if (xnew > xgoal && xpos < xgoal)
+	{
+		if ((m*xgoal + b) < ygoal2 && (m*xgoal + b) > ygoal1)
+		{
+			xpos = xnew;
+			ypos = ynew;
+
+			return true;
+		}
+	}
+
 	// reset ship's current position 
 	xpos = xnew;
 	ypos = ynew;
@@ -159,6 +175,7 @@ vector<policy> EA_downselect(vector<policy> P, int popSize);
 int main()
 {
 	srand(time(NULL));
+	ofstream fout;
 
 	// Initialize Goal
 	goal G;
@@ -230,10 +247,14 @@ int main()
 	// Initialize Ship
 	ship S;
 	S.init();
+	double shipInitX = S.xpos;
+	double shipInitY = S.ypos;
+	double shipInitTheta = S.theta;
+	double shipInitOmega = S.omega;
 
 	// Initialize Neural Network
 	neural_network NN;
-	NN.setup(3, 5, 1); //inputs are x, y, theta
+	NN.setup(3, 10, 1); //inputs are x, y, theta
 
 	NN.set_in_min_max(0, 1000);
 	NN.set_in_min_max(0, 1000);
@@ -253,17 +274,29 @@ int main()
 	}
 	assert(population.size() == popSize);
 
+	fout.clear();
+	fout.open("ShipPos.txt");
+	fout << "GOAL:" << "\t" << G.x1 << "\t" << G.y1 << "\t" << G.x2 << "\t" << G.y2 << endl;
+
 	for (int generation = 0; generation < 10; generation++) // number of generations
 	{
+		for (int i = 0; i < popSize; i++)
+		{
+			population.at(i).fitness = 0;
+		}
+
 		for (int policyIndex = 0; policyIndex < popSize; policyIndex++)
 		{
-			//S.init();
+			S.xpos = shipInitX;
+			S.ypos = shipInitY;
+			S.theta = shipInitTheta;
+			S.omega = shipInitOmega;
 
 			NN.set_weights(population.at(policyIndex).weights, true);
 
 			int tStep = 0;
 
-			while (!S.checkForGoal(G.x1, G.y1, G.y2) && !S.checkForWall())
+			while (tStep < 1000)
 			{
 				// set state
 				vector<double> state;
@@ -284,45 +317,42 @@ int main()
 				
 				population.at(policyIndex).timeStep = tStep;
 				
+				fout << tStep << "\t" << S.xpos << "\t" << S.ypos << "\t" << S.u << endl;
+
+
 				// determine fitness
 
 				if (S.checkForGoal(G.x1, G.y1, G.y2))
 				{
 					cout << "SHIP REACHED GOAL" << endl;
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness +1000;
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness +10000;
 					break;
 				}
+				
 				
 				else if(S.checkForWall())
 				{
 					cout << "SHIP HIT WALL" << endl;
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness -1000;
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness -500;
 					break;
 				}
 
 				else
 				{
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness-1; //NEED SOME SORT OF FITNESS EVALUATION
+					population.at(policyIndex).fitness = population.at(policyIndex).fitness - sqrt(pow((S.xpos-G.x1),2) + pow((S.ypos-G.y1),2)); //NEED SOME SORT OF FITNESS EVALUATION
 				}
 
-				cout << tStep << endl;
+			//	cout << tStep << endl;
 
-				if (tStep > 1000)
+				if (tStep == 999)
 				{
+					cout << "TOOK TOO LONG" << endl;
 					break;
 				}
 
 				tStep++;
 			}
 		}
-		// EA for weights
-
-		// Neural Network with weights
-
-		// Simulate with given u
-
-		// Evaluate fitness
-
 		
 		population = EA_downselect(population, popSize);
 
