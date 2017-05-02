@@ -14,6 +14,8 @@
 
 using namespace std;
 
+#define LYRAND (double)rand()/RAND_MAX
+
 class ship{
 public:
 	double xpos;
@@ -43,7 +45,7 @@ void ship::init()
 	theta = rand() % 360 *3.1415/180; // in radians
 	omega = rand() % 10; // in radians per second
 	dt = 0.2;
-	T = 5.0;
+	T = 10.0;
 	v = 3.0;
 	u = 0;
 }
@@ -53,9 +55,16 @@ void ship::simulate()
 	// kinematics equations
 	omega = omega + (u - omega)*dt / T;
 	theta = theta + omega*dt;
+	if (theta > 2 * 3.1415)
+	{
+		theta = theta - 2 * 3.1415;
+	}
+	else if (theta < -2 * 3.1415)
+	{
+		theta = theta + 2 * 3.1415;
+	}
 	ynew = ypos + v*cos(theta)*dt;
 	xnew = xpos + v*sin(theta)*dt;
-
 	assert(xnew != xpos || ynew != ypos); // ensures ship is moving in at least one direction and that program can calculate next position (LR_8)
 	
 }
@@ -126,7 +135,7 @@ void goal::init() {
 
 	
 	// Keep goal small (not necessary)
-	while (abs(y2 - y1) > 10 || y1 == y2)
+	while (abs(y2 - y1) > 200 || y1 == y2 || abs(y2-y1) < 100)
 	{
 		y2 = rand() % 1000;
 	}
@@ -157,7 +166,7 @@ void policy::init(int numWeights) {
 	for (int i = 0; i < numWeights; i++)
 	{
 		double weight;
-		weight = (double)rand() / RAND_MAX - (double)rand()/RAND_MAX;
+		weight = LYRAND - LYRAND;
 		weights.push_back(weight); //placeholder
 	}
 	fitness = 0; // placeholder
@@ -244,22 +253,55 @@ int main()
 	goal Gol;
 	Gol.init();
 
-	// Initialize Ship
+	int userInput = 0;
+	double shipInitX = -1;
+	double shipInitY = -1;
+	double shipInitTheta = -1;
+	double shipInitOmega = -1;
 	ship S;
-	S.init();
-	double shipInitX = S.xpos;
-	double shipInitY = S.ypos;
-	double shipInitTheta = S.theta;
-	double shipInitOmega = S.omega;
+
+	cout << "Choose Type of Run: " << endl;
+	cout << "1. Place ship directly left of goal (HR_1)" << endl;
+	cout << "2. Place ship in specific random position (HR_3)" << endl;
+	cout << "3. Place ship in any random position (HR_4)" << endl;
+	cin >> userInput;
+
+	if (userInput == 1)
+	{
+		S.init();
+
+		S.xpos = G.x1 - 50;
+		S.ypos = (G.y1 + G.y2) / 2;
+		S.theta = 3.1415 / 2;
+	}
+
+	else if (userInput == 2)
+	{
+		S.init();
+
+		S.xpos = G.x1 - 100;
+		S.ypos = (G.y1 + G.y2) / 2 - 100;
+	}
+
+	else if (userInput == 3)
+	{
+		// Initialize Ship
+		S.init();
+	}
+
+	shipInitX = S.xpos;
+	shipInitY = S.ypos;
+	shipInitTheta = S.theta;
+	shipInitOmega = S.omega;
 
 	// Initialize Neural Network
 	neural_network NN;
-	NN.setup(3, 10, 1); //inputs are x, y, theta
+	NN.setup(3, 5, 1); //inputs are x, y, theta
 
 	NN.set_in_min_max(0, 1000);
 	NN.set_in_min_max(0, 1000);
 	NN.set_in_min_max(0, 6.28);
-	NN.set_out_min_max(-15, 15);
+	NN.set_out_min_max(-15*3.1415/180, 15*3.1415/180);
 
 	int popSize = 10;
 
@@ -278,15 +320,16 @@ int main()
 	fout.open("ShipPos.txt");
 	fout << "GOAL:" << "\t" << G.x1 << "\t" << G.y1 << "\t" << G.x2 << "\t" << G.y2 << endl;
 
+	cout << "SHIP: " << S.xpos << ", " << S.ypos << endl;
+	cout << "GOAL: " << G.x1 << ", " << G.y1 << " & " << G.y2 << endl;
+
 	for (int generation = 0; generation < 10; generation++) // number of generations
 	{
-		for (int i = 0; i < popSize; i++)
-		{
-			population.at(i).fitness = 0;
-		}
-
+		fout << "GENERATION: " << generation << endl;
 		for (int policyIndex = 0; policyIndex < popSize; policyIndex++)
 		{
+			fout << "POLICY: " << policyIndex << endl;
+
 			S.xpos = shipInitX;
 			S.ypos = shipInitY;
 			S.theta = shipInitTheta;
@@ -296,13 +339,14 @@ int main()
 
 			int tStep = 0;
 
-			while (tStep < 1000)
+			while (tStep < 5000)
 			{
 				// set state
 				vector<double> state;
 				state.push_back(S.xpos);
 				state.push_back(S.ypos);
 				state.push_back(S.theta);
+				assert(state.size() == 3); // Fulfills MR_3
 
 				// give NN state
 				NN.set_vector_input(state);
@@ -315,7 +359,7 @@ int main()
 				// run one timestep
 				S.simulate();
 				
-				population.at(policyIndex).timeStep = tStep;
+				
 				
 				fout << tStep << "\t" << S.xpos << "\t" << S.ypos << "\t" << S.u << endl;
 
@@ -325,33 +369,44 @@ int main()
 				if (S.checkForGoal(G.x1, G.y1, G.y2))
 				{
 					cout << "SHIP REACHED GOAL" << endl;
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness +10000;
+					cout << "Time: " << tStep << endl;
+					population.at(policyIndex).fitness = 10000-tStep;
 					break;
-				}
+				} // Fulfills HR_3 & HR_4 (No assert used because cout proves it.) 
 				
 				
 				else if(S.checkForWall())
 				{
 					cout << "SHIP HIT WALL" << endl;
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness -500;
+					cout << "Time: " << tStep << endl;
+					population.at(policyIndex).fitness = -tStep*100000000000000;
 					break;
 				}
 
 				else
 				{
-					population.at(policyIndex).fitness = population.at(policyIndex).fitness - sqrt(pow((S.xpos-G.x1),2) + pow((S.ypos-G.y1),2)); //NEED SOME SORT OF FITNESS EVALUATION
-				}
+					population.at(policyIndex).fitness = - tStep*sqrt(pow((S.xpos-G.x1),2) + pow((S.ypos-(G.y1+G.y2)/2),2)) - tStep*(abs(S.theta-3.1415/2-atan(abs((G.y1+G.y2)/2-S.ypos)/abs(G.x1-S.xpos)))); //NEED SOME SORT OF FITNESS EVALUATION
+				} // Fulfills MR_4
 
-			//	cout << tStep << endl;
+				//cout << tStep << "\t" << population.at(policyIndex).fitness << endl;
 
-				if (tStep == 999)
+				if (tStep == 4999)
 				{
 					cout << "TOOK TOO LONG" << endl;
 					break;
 				}
 
 				tStep++;
+
+				population.at(policyIndex).timeStep = tStep;
 			}
+			fout << "GENERATION: " << generation << endl;
+			for (int j = 0; j < popSize; j++)
+			{
+				fout << "POLICY: " << j << "FITNESS: " << population.at(j).fitness << endl;
+			}
+
+
 		}
 		
 		population = EA_downselect(population, popSize);
@@ -366,6 +421,8 @@ int main()
 	{
 		cout << i << "\t" << population.at(i).fitness << "\t" << population.at(i).timeStep << endl;
 	}
+
+	fout.close();
 
 	system("pause");
     return 0;
@@ -401,7 +458,7 @@ vector<policy> EA_replicate(vector<policy> P, int popSize, int numWeights)
 		for (int i = 0; i < numWeights; i++)
 		{
 			int weightIndex = rand() % numWeights;
-			mutPol.weights.at(weightIndex) = mutPol.weights.at(weightIndex) + (double)rand() / RAND_MAX - (double)rand() / RAND_MAX;
+			mutPol.weights.at(weightIndex) = mutPol.weights.at(weightIndex) + LYRAND/10 - LYRAND/10;
 			assert(mutPol.weights.at(weightIndex) != population.at(index).weights.at(weightIndex)); // ensures program can mutate set of weights (LR_5)
 		}
 		
